@@ -19,12 +19,14 @@ import { Public } from 'src/user/public.decorator';
 import { writeFileSync } from 'fs';
 import { diskStorage } from 'multer';
 import { PrismaService } from 'src/prisma.service';
+import { MailService } from 'src/mail/mail.service';
 
 @Controller('playlist')
 export class PlaylistController {
   constructor(
     private readonly playlistService: PlaylistService,
     private readonly prismaService: PrismaService,
+    private readonly mailService: MailService,
   ) {}
 
   @Post()
@@ -105,7 +107,6 @@ export class PlaylistController {
         },
       },
     });
-    console.log(result);
     return file;
   }
 }
