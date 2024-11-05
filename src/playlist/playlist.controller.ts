@@ -10,6 +10,7 @@ import {
   UploadedFile,
   HttpCode,
   BadRequestException,
+  Request,
 } from '@nestjs/common';
 import { PlaylistService } from './playlist.service';
 import { CreatePlaylistDto } from './dto/create-playlist.dto';
@@ -20,16 +21,36 @@ import { writeFileSync } from 'fs';
 import { diskStorage } from 'multer';
 import { PrismaService } from 'src/prisma.service';
 import { MailService } from 'src/mail/mail.service';
-
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiHeader,
+  ApiInternalServerErrorResponse,
+  ApiResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { FileUploadDto } from './dto/upload-file.dto';
+@ApiInternalServerErrorResponse({
+  description: 'Internal server error',
+})
+@ApiUnauthorizedResponse({
+  description: 'Unauthorized',
+})
 @Controller('playlist')
 export class PlaylistController {
-  constructor(
-    private readonly playlistService: PlaylistService,
-    private readonly prismaService: PrismaService,
-    private readonly mailService: MailService,
-  ) {}
+  constructor(private readonly playlistService: PlaylistService) {}
 
   @Post()
+  @ApiResponse({
+    status: 201,
+    description: 'The record has been successfully created.',
+    example: {
+      id: 1,
+      name: 'My playlist',
+    },
+  })
   create(@Body() createPlaylistDto: CreatePlaylistDto) {
     return this.playlistService.create(createPlaylistDto);
   }
@@ -58,6 +79,10 @@ export class PlaylistController {
   }
 
   @Post('file')
+  @ApiHeader({
+    name: 'content-language',
+    required: false,
+  })
   @UseInterceptors(
     FileInterceptor('file', {
       dest: './uploads',
@@ -72,7 +97,7 @@ export class PlaylistController {
       },
       storage: diskStorage({
         filename(req, file, callback) {
-          const filename = `${new Date().toLocaleString('fr-FR').replaceAll('/', '-')}-${file.originalname}`;
+          const filename = `${new Date().toLocaleString(req.headers['content-language'] || 'fr-FR').replaceAll('/', '-')}-${file.originalname}`;
           callback(null, filename);
         },
         destination: './uploads',
@@ -80,33 +105,17 @@ export class PlaylistController {
     }),
   )
   @HttpCode(201)
-  @Public()
-  async uploadFile(@UploadedFile() file: Express.Multer.File) {
-    const result = await this.prismaService.media.create({
-      data: {
-        path: file.filename,
-        duration: 0,
-        name: file.filename,
-        type: file.mimetype,
-        owner: {
-          connectOrCreate: {
-            where: { email: 'test@gmail.com' },
-            create: {
-              email: 'test@gmail.com',
-              password: '1234',
-            },
-          },
-        },
-        playlist: {
-          connectOrCreate: {
-            where: { id: 1 },
-            create: {
-              name: 'test',
-            },
-          },
-        },
-      },
-    });
-    return file;
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Media file to upload',
+    type: FileUploadDto,
+  })
+  async uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: FileUploadDto,
+    @Request() req,
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    return this.playlistService.createFile(file, body.playlistId, req.user.sub);
   }
 }
